@@ -1,112 +1,239 @@
 """
 Square Extractor Module
 
-Extracts individual squares from a chess board image.
+Extracts the 64 squares from a cropped chessboard image.
 """
 
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
+from src.piece_classifier import PieceClassifier
 
 class SquareExtractor:
-    """Class for extracting individual squares from a chess board image."""
+    """Class for extracting chess squares from a board image."""
     
-    def __init__(self):
-        self.board_img = None
-        self.squares = []
-        self.last_board_img = None
-    
-    def extract(self, board_img):
+    def __init__(self, square_size=None):
         """
-        Extract 64 individual squares from a chess board image.
+        Initialize the square extractor.
         
         Args:
-            board_img (numpy.ndarray): Chess board image
+            square_size (int, optional): Size of each square. If None, it will be calculated.
+        """
+        self.square_size = square_size
+        self.squares = []
+        self.board_orientation = "white_bottom"  # "white_bottom" or "black_bottom"
+    
+    def extract(self, board_image, orientation=None):
+        """
+        Extract the 64 squares from a board image.
+        
+        Args:
+            board_image (numpy.ndarray): Cropped chess board image
+            orientation (str, optional): Force a specific orientation ("white_bottom" or "black_bottom")
             
         Returns:
             list: List of 64 square images in row-major order (A8-H8, A7-H7, ..., A1-H1)
         """
-        self.board_img = board_img
-        self.last_board_img = board_img.copy()
-        height, width = board_img.shape[:2]
+        if board_image is None:
+            raise ValueError("No board image provided")
+        
+        # Store a copy of the original image
+        self.board_image = board_image.copy()
+        
+        # Get board dimensions
+        height, width = board_image.shape[:2]
         
         # Calculate square size
-        square_height = height // 8
-        square_width = width // 8
+        if self.square_size is None:
+            self.square_size = min(height, width) // 8
+        
+        # Detect board orientation if not specified
+        if orientation is not None:
+            self.board_orientation = orientation
+        else:
+            self.board_orientation = self.detect_orientation(board_image)
         
         # Extract squares
         self.squares = []
         for row in range(8):
             for col in range(8):
-                # Extract square
-                y1 = row * square_height
-                y2 = (row + 1) * square_height
-                x1 = col * square_width
-                x2 = (col + 1) * square_width
+                # Calculate square coordinates
+                x1 = col * self.square_size
+                y1 = row * self.square_size
+                x2 = x1 + self.square_size
+                y2 = y1 + self.square_size
                 
-                square = board_img[y1:y2, x1:x2]
+                # Make sure we don't go out of bounds
+                x2 = min(x2, width)
+                y2 = min(y2, height)
+                
+                # Extract square
+                square = board_image[y1:y2, x1:x2]
+                
+                # Append to list
                 self.squares.append(square)
         
+        # Flip the squares order if the board orientation is black at bottom
+        if self.board_orientation == "black_bottom":
+            # Reverse the entire array to flip the board orientation
+            self.squares = self.squares[::-1]
+        
         return self.squares
+    
+    def detect_orientation(self, board_image):
+        """
+        Detect the board orientation based on piece placement.
+        1. Check kings and queens at the bottom rank
+        2. Check piece colors at the bottom rank
+        
+        Args:
+            board_image (numpy.ndarray): Cropped chess board image
+            
+        Returns:
+            str: "white_bottom" or "black_bottom"
+        """
+        height, width = board_image.shape[:2]
+        square_size = min(height, width) // 8
+        
+        # Extract all squares to analyze pieces
+        self.piece_classifier = PieceClassifier()
+        self.piece_classifier.load_model("models/piece_classifier.h5")
+        squares = self.extract_squares(board_image)
+        
+        # Method 1: Check kings and queens at bottom rank (most reliable)
+        bottom_rank = []
+        for col in range(8):
+            square = board_image[(7*square_size):height, col*square_size:(col+1)*square_size]
+            bottom_rank.append(square)
+            
+        piece_labels = []
+        for square in bottom_rank:
+            piece_labels.append(self.piece_classifier.classify_square(square))
+        
+        # Look for king and queen positions
+        # In standard chess notation, white king starts at e1, queen at d1
+        if 'white_king' in piece_labels and 'white_queen' in piece_labels:
+            k_index = piece_labels.index('white_king')
+            q_index = piece_labels.index('white_queen')
+            # Check if king and queen are in e1 and d1 positions
+            if k_index == 4 and q_index == 3:
+                return "white_bottom"
+        
+        # Check for black king and queen at bottom
+        if 'black_king' in piece_labels and 'black_queen' in piece_labels:
+            k_index = piece_labels.index('black_king')
+            q_index = piece_labels.index('black_queen')
+            # Check if king and queen are in e1 and d1 positions
+            if k_index == 4 and q_index == 3:
+                return "black_bottom"
+        
+        # Method 2: Check piece colors at the bottom rank
+        white_pieces = sum(1 for p in piece_labels if p.startswith('white_') and p != 'empty')
+        black_pieces = sum(1 for p in piece_labels if p.startswith('black_') and p != 'empty')
+        
+        if white_pieces > black_pieces:
+            return "white_bottom"
+        elif black_pieces > white_pieces:
+            return "black_bottom"
+        
+        # Method 3: Fallback to square color check
+        h1_x = 7 * square_size
+        h1_y = 7 * square_size
+        h1_square = board_image[h1_y:h1_y+square_size, h1_x:h1_x+square_size]
+        
+        a1_x = 0
+        a1_y = 7 * square_size
+        a1_square = board_image[a1_y:a1_y+square_size, a1_x:a1_x+square_size]
+        
+        # Convert squares to grayscale
+        h1_gray = cv2.cvtColor(h1_square, cv2.COLOR_BGR2GRAY) if len(h1_square.shape) > 2 else h1_square
+        a1_gray = cv2.cvtColor(a1_square, cv2.COLOR_BGR2GRAY) if len(a1_square.shape) > 2 else a1_square
+        
+        # Calculate average brightness
+        h1_brightness = np.mean(h1_gray)
+        a1_brightness = np.mean(a1_gray)
+        
+        # In standard chess, h1 should be light and a1 should be dark
+        # If this pattern is reversed, the board is likely flipped
+        return "black_bottom" if h1_brightness < a1_brightness else "white_bottom"
+    
+    def extract_squares(self, board_image):
+        """Helper method to extract all squares without applying orientation logic"""
+        height, width = board_image.shape[:2]
+        square_size = min(height, width) // 8
+        
+        squares = []
+        for row in range(8):
+            for col in range(8):
+                x1 = col * square_size
+                y1 = row * square_size
+                x2 = min(x1 + square_size, width)
+                y2 = min(y1 + square_size, height)
+                square = board_image[y1:y2, x1:x2]
+                squares.append(square)
+        
+        return squares
     
     def visualize_squares(self):
         """
         Visualize the extracted squares.
+        
+        Returns:
+            numpy.ndarray: Visualization image
         """
         if not self.squares:
-            print("No squares extracted yet.")
-            return
+            raise ValueError("No squares to visualize. Extract squares first.")
         
-        # Create a figure to display all 64 squares
-        fig, axes = plt.subplots(8, 8, figsize=(12, 12))
-        
-        # Display each square
-        for idx, square in enumerate(self.squares):
-            row, col = divmod(idx, 8)
-            rgb_square = cv2.cvtColor(square, cv2.COLOR_BGR2RGB)
-            axes[row, col].imshow(rgb_square)
-            axes[row, col].axis('off')
+        # Create a grid of squares
+        rows = []
+        for i in range(8):
+            row_start = i * 8
+            row_end = row_start + 8
+            row_squares = self.squares[row_start:row_end]
             
-            # Add coordinate labels
-            file_label = chr(ord('a') + col)
-            rank_label = 8 - row
-            axes[row, col].set_title(f"{file_label}{rank_label}", fontsize=8)
+            # Concatenate squares horizontally
+            row = np.hstack(row_squares)
+            rows.append(row)
         
-        plt.tight_layout()
-        plt.show()
+        # Concatenate rows vertically
+        visualization = np.vstack(rows)
         
-    def adjust_extraction(self, board_img, num_rows=8, num_cols=8):
+        return visualization
+    
+    def save_squares(self, output_dir):
         """
-        Adjust the extraction process with specific number of rows/cols.
-        Useful for non-standard boards or testing.
+        Save the extracted squares to files.
         
         Args:
-            board_img (numpy.ndarray): Chess board image
-            num_rows (int): Number of rows
-            num_cols (int): Number of columns
+            output_dir (str): Directory to save the squares
             
         Returns:
-            list: List of extracted square images
+            list: Paths to saved square images
         """
-        self.board_img = board_img
-        self.last_board_img = board_img.copy()
-        height, width = board_img.shape[:2]
+        if not self.squares:
+            raise ValueError("No squares to save. Extract squares first.")
         
-        # Calculate square size
-        square_height = height // num_rows
-        square_width = width // num_cols
+        import os
         
-        # Extract squares
-        self.squares = []
-        for row in range(num_rows):
-            for col in range(num_cols):
-                # Extract square
-                y1 = row * square_height
-                y2 = (row + 1) * square_height
-                x1 = col * square_width
-                x2 = (col + 1) * square_width
-                
-                square = board_img[y1:y2, x1:x2]
-                self.squares.append(square)
+        # Create output directory
+        os.makedirs(output_dir, exist_ok=True)
         
-        return self.squares 
+        # Define square coordinates
+        files = 'abcdefgh'
+        ranks = '87654321'
+        
+        # Save each square
+        square_paths = []
+        for i, square in enumerate(self.squares):
+            file_idx = i % 8
+            rank_idx = i // 8
+            
+            # Get coordinates
+            square_name = f"{files[file_idx]}{ranks[rank_idx]}"
+            
+            # Save square
+            square_path = os.path.join(output_dir, f"square_{square_name}.png")
+            cv2.imwrite(square_path, square)
+            square_paths.append(square_path)
+        
+        return square_paths 
