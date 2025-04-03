@@ -183,15 +183,22 @@ class ChessBoardGenerator:
         
         return board_with_highlight
     
-    def add_move_indicator(self, board, square, indicator_type='brilliant', alpha=0.7):
+    def add_move_indicator(self, board, square, indicator_type='best', alpha=0.7):
         """
-        Add move quality indicator (brilliant, good, mistake, blunder, etc.).
+        Add move quality indicator based on Chess.com notation.
         
         Args:
             board (numpy.ndarray): Board image
             square (str): Square coordinate (e.g., 'e4')
-            indicator_type (str): Type of indicator: 'brilliant', 'good', 
-                                 'inaccuracy', 'mistake', 'blunder'
+            indicator_type (str): Type of indicator: 
+                                 'best' (star icon),
+                                 'brilliant' (!!),
+                                 'great' (!),
+                                 'good' (green checkmark),
+                                 'inaccuracy' (!?),
+                                 'mistake' (?),
+                                 'blunder' (??),
+                                 'miss' (X)
             alpha (float): Transparency of the indicator
             
         Returns:
@@ -217,21 +224,30 @@ class ChessBoardGenerator:
         radius = self.square_size // 4
         
         # Choose color and symbol based on indicator type
-        if indicator_type == 'brilliant':
+        if indicator_type == 'best':
             color = (0, 255, 255)  # Yellow
             symbol = '★'
+        elif indicator_type == 'brilliant':
+            color = (0, 255, 255)  # Yellow
+            symbol = '!!'
+        elif indicator_type == 'great':
+            color = (0, 255, 128)  # Light Green
+            symbol = '!'
         elif indicator_type == 'good':
             color = (0, 255, 0)    # Green
             symbol = '✓'
         elif indicator_type == 'inaccuracy':
             color = (0, 165, 255)  # Orange
-            symbol = '?!'
+            symbol = '!?'
         elif indicator_type == 'mistake':
-            color = (0, 0, 255)    # Red
+            color = (0, 69, 255)   # Orange-Red
             symbol = '?'
         elif indicator_type == 'blunder':
             color = (0, 0, 255)    # Red
             symbol = '??'
+        elif indicator_type == 'miss':
+            color = (0, 0, 255)    # Red
+            symbol = 'X'
         else:
             color = (200, 200, 200)  # Gray
             symbol = '•'
@@ -293,11 +309,14 @@ class ChessBoardGenerator:
         
         # Indicator types and positions
         indicator_samples = [
-            ('brilliant', 'e4'),
+            ('best', 'e4'),
+            ('brilliant', 'd4'),
+            ('great', 'c4'),
             ('good', 'd5'),
             ('inaccuracy', 'f6'),
             ('mistake', 'g5'),
-            ('blunder', 'h4')
+            ('blunder', 'h4'),
+            ('miss', 'a4')
         ]
         
         # Generate boards
