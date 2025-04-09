@@ -25,8 +25,8 @@ This project provides a complete workflow for recognizing chess positions from C
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/chess-analysis.git
-cd chess-analysis
+git clone https://github.com/AnshukumarPal/image-to-fen
+cd image-to-fen
 ```
 
 2. Install the required dependencies:
